@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+	
+	<head>
+		<meta charset="UTF-8">
+		<meta http-equiv="X-UA-Compatible" content="IE=edge">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        <meta property="og:title" content="OptionTune - analayze option trades on over 5,000 tickers" />
+        <meta property="og:description" content="Optimize your option trades and visualize the best exits." />
+        <meta property="og:image" content="https://uploads-ssl.webflow.com/62ec172a17fa6304657952cb/62fbc834562e464bd2208b14_Screen%20Shot%202022-08-16%20at%2012.38.00%20PM.png"/>
+        
+		<title>OptionTune - Analyze Trades</title>
+        
+    <link href="https://uploads-ssl.webflow.com/62ec172a17fa6304657952cb/634ec148807ebd78e5c58550_bar-chart-2.png" rel="shortcut icon" type="image/x-icon"/>
+		
+		<!-- cirrus imports -->
+		<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.8.1/css/all.css" integrity="sha384-hWVjflwFxL6sNzntih27bfxkr27PmbbK/iSvJ+a4+0owXq79v+lsFkW54bOGbiDQ" crossorigin="anonymous">
+		<link href="https://fonts.googleapis.com/css?family=Nunito+Sans:200,300,400,600,700" rel="stylesheet">
+		<link href="https://fonts.googleapis.com/css?family=Montserrat:400,700" rel="stylesheet">
+		<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cirrus-ui/dist/cirrus.min.css">
+		<!-- end cirrus imports -->
+        
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.0/css/all.min.css" integrity="sha512-xh6O/CkQoPOWDdYTDqeRdPCVd1SpvCA9XXcUnZS2FmJNp1coAFzvtCN9BmamE+4aHK8yyUHUSCcJHgXloTyT2A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+		
+		<!-- algolia imports -->
+		<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@algolia/autocomplete-theme-classic" />
+		<script src="https://cdn.jsdelivr.net/npm/algoliasearch@4.5.1/dist/algoliasearch-lite.umd.js" integrity="sha256-EXPXz4W6pQgfYY3yTpnDa3OH8/EPn16ciVsPQ/ypsjk=" crossorigin="anonymous"></script>
+		<script src="https://cdn.jsdelivr.net/npm/@algolia/autocomplete-plugin-query-suggestions"></script>
+		<script src="https://cdn.jsdelivr.net/npm/@algolia/autocomplete-js"></script>
+		<script>
+			const { createQuerySuggestionsPlugin } = window['@algolia/autocomplete-plugin-query-suggestions'];
+			const { autocomplete } = window['@algolia/autocomplete-js'];
+			
+		</script>
+		<!-- end algolia imports -->
+		
+		<!-- typesence imports -->
+		<script src="https://cdn.jsdelivr.net/npm/typesense@latest/dist/typesense.min.js"></script>
+		<!-- end typsense imports -->
+        
+        <script>var o_options = {domain: 'optiontune.outseta.com', tokenStorage: 'cookie', load: 'nocode,auth,profile'};</script>
+        <script src="https://cdn.outseta.com/outseta.min.js" data-options="o_options"></script>
+        
+        <!-- Google Tag Manager -->
+        <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+        new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+        j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+        'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+        })(window,document,'script','dataLayer','GTM-5R2Q5G3');</script>
+        <!-- End Google Tag Manager -->
+		
+		<!--other dependencies-->
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/luxon/3.0.1/luxon.js"></script>
+		<script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+		<script src="https://cdn.jsdelivr.net/npm/umbrellajs"></script>
+        <script src="https://cdn.jsdelivr.net/npm/short-unique-id@4.4.4/dist/short-unique-id.min.js"></script>
+		
+		
+		<script>
+			google.charts.load('current', { 'packages': ['corechart', 'table'] });
+			google.charts.setOnLoadCallback(drawChart);
+			
+			
+			//callback function required for google charts initializaton 
+			function drawChart() {
+                checkRef();
+			}
+		</script>
+        
+		<!-- tune imports -->
+		<script src="tune.js"></script>
+		<!-- end tune imports -->
+		
+        <style>
+              .template_option-example {
+            display: grid;
+            grid-template-columns: 50px auto;
+            grid-gap: 5px;
+            align-items: center;
+            min-height: 100%;
+        }
+        .template_option-example>.tag {
+            background: #0d6efd;
+            color: white;
+            border-radius: 3px;
+            padding: 3px 5px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            letter-spacing: 1px;
+            font-weight: bold;
+            font-size: 11px;
+            min-height: 100%;
+        }
+        .template_option-example>.name {
+            font-size: 14px;
+            min-height: 100%;
+            display: flex;
+            align-items: center;
+        }
+
+        .autocomplete-counts {
+            font-weight: bold;
+        }
+        .autocomplete-not-found {
+            padding: 15px !important;
+            min-height: 35px !important;
+        }
+        .autocomplete-not-found>span {
+            color: red;
+            margin: 0px 3px;
+        }
+        input.aa-Input {
+            border: none !important;
+            box-shadow: none !important;
+            background-image: none !important;
+        }
+        input.aa-Input.search,
+        input:not([type=checkbox]):not([type=radio]):not([type=submit]):not([type=button]):not([type=reset])[type=search],
+        select.search,
+        select[type=search] {
+            padding-left: .5rem !important;
+        }
+        .aa-Label {
+            margin-right: 0px !important;
+        }
+        .aa-ClearButton {
+            margin-bottom: 0px !important;
+        }
+        .aa-Input:focus+.aa-Form {
+            border: 1px solid #dee2e6 !important;
+        }
+        .aa-Autocomplete {
+            box-shadow: none !important;
+        }        
+        </style>
+	</head>
+	
+	<body>
+		
+		<!-- search inputs  -->
+		<div class="row pl-3">
+			<div class="col-4">
+				<div id="trade-symbol" class="form-group-input tooltip tooltip--right" data-tooltip="search for an option symbol"></div>
+			</div>
+			<div class="col-3">
+				<div id="trade-strategy" class="form-group-input  tooltip tooltip--right" data-tooltip="search for an option strategy"></div>
+			</div>
+		</div>
+        
+        <div id="error" class="pl-4 pt-1 pb-1 font-normal text-red-600"></div>
+		
+		
+		<div class="hero bg-indigo-600" id="help-container">
+			<div class="hero-body">
+				<div class="content">
+					<h2 class="title text-white">Select Symbol and Strategy</h2>
+					<h5 class="subtitle text-gray-300">selections will automatically create more filters</h5>
+				</div>
+			</div>
+		</div>
+		
+		
+		
+		
+		
+		<div class="row u-none pl-3" id="strategy-loading-container">
+			<div class="col-7 u-flex u-flex-row">
+				<div class="u-flex u-items-center u-justify-center w-100p" style="border:1px solid rgb(211, 210, 210); border-radius: 10px; height: 50px;">
+					<div class="animated loading loading-black mr-2">
+					</div>
+					<p class="text-black font-bold m-0">Loading Filters</p>
+				</div>
+			</div>
+		</div>
+		
+		<div id="strategy-container" class="pl-3"></div>
+		
+		
+		<div class="row u-none pl-3" id="charts-loading-container">
+			<div class="col-7 u-flex u-flex-row">
+				<div class="u-flex u-items-center u-justify-center w-100p" style="border:1px solid rgb(211, 210, 210); border-radius: 10px; height: 50px;">
+					<div class="animated loading loading-black mr-2">
+					</div>
+					<p class="text-black font-bold m-0">Loading Charts</p>
+				</div>
+			</div>
+		</div>
+		
+		
+        <div id="chart-text-container" class="row">
+        <div id="chart-text" class="pl-4 pt-1 pb-1 font-normal text-lg text-green-600"></div>
+        <button id="copy-shareurl-button" class="pl-1 pr-1 pt-1 pb-1 btn-transparent btn-animated u-none tooltip tooltip--right" data-tooltip="click to copy share url"><i class="fa-regular fa-xl fa-copy"></i></button>
+        </div>
+        
+        <div id="charts">
+        </div>
+		
+		
+		<script>
+			const typesense = new Typesense.Client({
+				'nodes': [{
+					'host': '6v0x7zu8fygbhcm5p-1.a1.typesense.net'
+					, 'port': '443'
+					, 'protocol': 'https'
+				}]
+				, 'apiKey': '3AW3UApCbCm8409Mz034ndhtxQu4GPVl'
+				, 'numRetries': 3, // A total of 4 tries (1 original try + 3 retries)
+				'connectionTimeoutSeconds': 10
+				, 'retryIntervalSeconds': 0.1
+				, 'healthcheckIntervalSeconds': 2
+				, 'logLevel': 'debug'
+			});
+			
+			const symbolData = (q = '', query_by = 'symbol,name', sort_by = 'rank:asc') => {
+				return typesense.collections('options').documents().search({
+					'q': q
+					, 'query_by': query_by
+					, 'sort_by': sort_by
+				});
+			}
+			
+			const strategyData = (q = '', query_by = 'name,synonyms,acronym', sort_by = 'rank:asc') => {
+				return typesense.collections('strategies').documents().search({
+					'q': q
+					, 'query_by': query_by
+					, 'sort_by': sort_by
+				});
+			}
+			
+			
+			let searchObjectValue = {
+				tradeSymbolKey: null
+				, tradeStrategyKey: null
+				, set: (key, value) => {
+					searchObjectValue[key] = value;
+					generate();
+				}
+				, get: () => {
+					let copy = { ...searchObjectValue };
+					delete copy.set;
+					delete copy.get
+					return copy;
+				}
+			};
+			
+			
+			
+			
+			function generate() {
+				
+				for (let key of Object.keys(searchObjectValue))
+					if (searchObjectValue[key] === null)
+						return;
+				
+				
+				u("#strategy-container").empty();
+				u("#strategy-loading-container").removeClass("u-none");
+				u("#help-container").addClass("u-none");
+				
+				
+				
+				//
+				// i returned all fields not only the name because 
+				// later when u need to call api u will use the <ID> of the item, not the <name>
+				// so just pass <ID> as parameter in setFields method to get the <ID>
+				// example: initAutoComplete()...setFields(["name", "symbol", "id"])....render()
+				//
+				//console.log(searchObjectValue.get());
+				// implement your needs here
+				delay(0).then(
+					() => {
+
+						symbol = searchObjectValue["tradeSymbolKey"].symbol;
+						strategy = searchObjectValue["tradeStrategyKey"].name.toLowerCase().replaceAll(" ", "-");
+						
+						calculateOptionStrategyForm(symbol, strategy);
+						
+						u("#strategy-loading-container").addClass("u-none");
+					}
+				);
+				
+			}
+			
+			
+			
+			
+			initAutoComplete("trade-symbol").setPromiseFn(symbolData)
+				.setFields(["name", "symbol"])
+				.setInputValuePattern(item => `${item.symbol}`)
+				.setOptionTemplate((item, html) => html`
+                                        <div class="template_option-example">
+                                            <div class="tag">${item.symbol}</div>
+                                            <div class="name">${item.name}</div>
+                                        </div>`).displayCount()
+				.setPlaceHolder('SPX')
+				.ref(searchObjectValue, "tradeSymbolKey") // searchObject pass by reference
+				.render();
+			
+			
+			
+			initAutoComplete("trade-strategy").setPromiseFn(strategyData)
+				.setFields(["name", "acronym"])
+				.setInputValuePattern(item => `${item.name}`)
+				.setOptionTemplate((item, html) => html`
+                                        <div class="template_option-example">
+                                            <div class="tag">${item.acronym}</div>
+                                            <div class="name">${item.name}</div>
+                                        </div>`).displayCount()
+				.setPlaceHolder('Iron Condor')
+				.ref(searchObjectValue, "tradeStrategyKey")
+				.render();
+            
+            
+            
+  
+            
+            
+            checkSharing();
+            
+            /*
+            ostr = JSON.parse(jstr);
+            lstr = ostr.legs;
+            
+         
+            
+            
+            O = new OptionStrategy(ostr.startDate, ostr.startHour, ostr.startMinute);
+            
+            for (let i=0; i < lstr.length; i++){
+                leg = lstr[i];
+                
+                L = new OptionLeg(leg.ticker, leg.expDate, leg.quantity, leg.strike, leg.optionType);
+                O.add(L);
+                
+            }
+            
+            drawOptionStrategyForm(O);
+            
+            */
+            
+            //log(uid());
+            
+            //log(params.share);
+            
+            
+            //log(encodeURIComponent("SPX 1 x 3560 put - exp 2022-10-10 | SPX -1 x 3610 put - exp 2022-10-10 | SPX -1 x 3665 call - exp 2022-10-10 | SPX 1 x 3715 call - exp 2022-10-10"));
+            
+            
+            //loadStrategy("arBSxoc1hG");
+            
+            
+            //loadStrategy("arBSxoc1hG");
+            
+            //loadStrategy("PxdxtkObBU");
+            //error(getCurrentUrl());
+            //error(window.location.href.split('?')[0]);
+            
+            //url = "https://us-east4-optiontune.cloudfunctions.net/findata?path=/v2/aggs/ticker/SPY/range/1/minute/1665140097008/1665744897008?adjusted=true&sort=desc&limit=1";
+            
+            //fetchText(url);
+            
+            
+       
+            //log(btoa("qwerty"));
+            
+            //log(atob("Ym9ua2Vycw=="));
+            /*if (response.ok) { // if HTTP-status is 200-299
+                // get the response body (the method explained below)
+            let json = await response.json();
+                error(json);
+                
+            } else {
+            error("HTTP-Error: " + response.status);
+            }*/
+            //error(encodeURIComponent("/v3/reference/options/contracts?underlying_ticker=SPX&contract_type=call&limit=1&expiration_date.lt=2022-10-14&sort=expiration_date&order=desc&expired=true"));
+            
+           
+		  </script>
+  
+        <script>
+            log("outseta.on pre");
+            Outseta.on('accessToken.set', function (user) {
+        log("outseta.on start");
+        log('email:' + user.email);
+        log('sub:' + user.sub);
+        log("outseta.on end");
+    });
+        </script>
+        
+	   <!-- Google Tag Manager (noscript) -->
+        <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-5R2Q5G3"
+height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+        <!-- End Google Tag Manager (noscript) -->
+        
+	</body>
+	
+</html>
+

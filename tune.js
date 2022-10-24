@@ -935,12 +935,21 @@ async function analyzeStrategy(strategy) {
     t2a = timestamp[timestamp.length - 1];
     t2 = getMillistampFromYMD(getYMDFromMillistamp(t0), 23, 59, 59);
 
-    news = getNews(t1, t2);
-    for (let i=0; i < news.length; i++){
-            events.push(new Event(news[i].event, news[i].timestamp));
-    }
 
-	return new OptionStats(minLength, legStatArr, shortStrikes, shortSide, longSide, callSide, putSide, shortCallSide, longCallSide, shortPutSide, longPutSide, price, position, timestamp, volume, transactions, events);
+	
+	return new Promise( (resolve, reject) => {
+		getNews(t1, t2).then( res => res.json() )
+		.then( news => {
+
+			for (let i=0; i < news.length; i++){
+				events.push(new Event(news[i].event, news[i].timestamp));
+			}
+			// !!!
+			resolve(new OptionStats(minLength, legStatArr, shortStrikes, shortSide, longSide, callSide, putSide, shortCallSide, longCallSide, shortPutSide, longPutSide, price, position, timestamp, volume, transactions, events))
+
+		}).catch( err => reject(err));
+	});
+
 }
 class AltSide {
 	constructor(position, length) {
@@ -1245,12 +1254,12 @@ async function fetchText(requestUrl) {
 //Syncrhonous HTTP Get Request.
 //How might this be done asynchronously or in threads to speed up processing in parallel for multiple legs and multiple strategies?
 function httpGet(requestUrl) {
-	
+	return fetch(requestUrl);
     
-    var xmlHttp = new XMLHttpRequest();
-	xmlHttp.open("GET", requestUrl, false); // false for synchronous request
-	xmlHttp.send(null);
-	return xmlHttp.responseText;
+    // var xmlHttp = new XMLHttpRequest();
+	// xmlHttp.open("GET", requestUrl, false); // false for synchronous request
+	// xmlHttp.send(null);
+	// return xmlHttp.responseText;
     
     
     
@@ -1283,10 +1292,11 @@ function getNews(timestamp1, timestamp2){
     
     
     requestUrl = "https://app.sheetlabs.com/TUNE/news?timestamp=" + timestamp1 + ".." + timestamp2 + "&_order=desc";
+
     httpResp = httpGet(requestUrl);
+	return httpResp;
     
-    
-    return JSON.parse(httpResp);
+    // return JSON.parse(httpResp);
     //return JSON.parse({});
 
     
@@ -1308,13 +1318,14 @@ function finRequest(pathUrl) {
     
     httpResp = "";
     
-    try{
+    // try{
 	httpResp = httpGet(reqUrl);
+	return httpResp;
 	//log("httpResp = " + httpResp);
-    }
-    catch(e){error(e.message);}
+    // }
+    // catch(e){error(e.message);}
     
-	return JSON.parse(httpResp);
+	// return JSON.parse(httpResp);
 }
 //Return the results portion of the http Get response from the polygon API
 function finResults(pathUrl) {
@@ -1515,14 +1526,20 @@ function lastAggBar(ticker, timestamp = new Date().getTime()) {
 			ticker = "OEF";
 			break;
 	}
-	aggUrl = "/v2/aggs/ticker/" + ticker + "/range/1/minute/" + startTime + "/" + endTime + "?adjusted=true&sort=desc&limit=1";
-	aggResults = finResults(aggUrl);
-	if (aggResults == null) {
-		error("no quote results for " + ticker);
-		return;
-	}
-	lastResult = aggResults[0];
-	return new AggBar(multipler * lastResult.vw, lastResult.timestamp, lastResult.volume, lastResult.transactions);
+	aggUrl = "https://us-east4-optiontune.cloudfunctions.net/findata?path=/v2/aggs/ticker/" + ticker + "/range/1/minute/" + startTime + "/" + endTime + "?adjusted=true&sort=desc&limit=1";
+	return new Promise( (resolve, reject) => {
+		// aggResults = finResults(aggUrl);
+		httpGet(aggUrl).then( res => res.json() )
+					   .then( aggResults => {
+						console.log(aggResults)
+							if (aggResults.results == null) {
+								error("no quote results for " + ticker);
+								reject();
+							}
+							lastResult = aggResults.results[0];
+							resolve(new AggBar(multipler * lastResult.vw, lastResult.timestamp, lastResult.volume, lastResult.transactions));					
+					   }).catch( err => reject(err));
+	});
 }
 //Aggregate bars for an options contract or stock ticker between to millistamp times.
 //Interpolates when there are missing values.  Could use quotes to fill gaps instead but that would be much slower.
@@ -1623,38 +1640,35 @@ function loadStrategy(slug){
     requestUrl = "https://app.sheetlabs.com/TUNE/ss?slug=" + slug;    
     httpResp = httpGet(requestUrl);
     
-    
-
-    p = JSON.parse(httpResp);
- 
-    if (p.length > 0){
+	httpResp.then( res => res.json() )
+		    .then( p => {
+				if (p.length > 0){
         
     
-        ostr = JSON.parse(p[0].json);  
-        lstr = ostr.legs;
-            
-        O = new OptionStrategy(ostr.startDate, ostr.startHour, ostr.startMinute, slug);
-            
-        for (let i=0; i < lstr.length; i++){
-  
-            leg = lstr[i];
-                
-            L = new OptionLeg(leg.ticker, leg.expDate, leg.quantity, leg.strike, leg.optionType);
-            O.add(L);
-                
-        }
-            
-        u("#help-container").addClass("u-none");
-        drawOptionStrategyForm(O);
-    
-    }
-    
-    else{
-        
-        error("shared strategy " + slug + " not found.  Try again in a few minutes while data is syncing.")
-    }
-
-    
+					ostr = JSON.parse(p[0].json);  
+					lstr = ostr.legs;
+						
+					O = new OptionStrategy(ostr.startDate, ostr.startHour, ostr.startMinute, slug);
+						
+					for (let i=0; i < lstr.length; i++){
+			  
+						leg = lstr[i];
+							
+						L = new OptionLeg(leg.ticker, leg.expDate, leg.quantity, leg.strike, leg.optionType);
+						O.add(L);
+							
+					}
+						
+					u("#help-container").addClass("u-none");
+					drawOptionStrategyForm(O);
+				
+				}else{
+					error("shared strategy " + slug + " not found.  Try again in a few minutes while data is syncing.")
+				}
+			})
+			.catch( err => {
+				error("shared strategy " + slug + " not found.  Try again in a few minutes while data is syncing.")
+			});
 }
 
 
@@ -1691,7 +1705,11 @@ function saveStrategy(strat){
             requestUrl = "https://hook.us1.make.com/9y3lws72i5tb2smgrmcurznpd3rsilj3?username=" + encodeURIComponent(username) + "&slug=" + encodeURIComponent(slug) + "&json=" + encodeURIComponent(jstr) + "&timestamp=" + encodeURIComponent(timestamp) + "&title=" + encodeURIComponent(title);
             
             //error(requestUrl);
-            httpGet(requestUrl);
+            httpGet(requestUrl).then( res => {
+				console.log("strategy saved");
+			}).catch( err => {
+				console.error("error on saving strategry: ",err)
+			});
       
 }
 
@@ -1778,23 +1796,24 @@ async function analyzeTradeForm() {
         
         
         
-		OS = await analyzeStrategy(strat);
-		//log("OS null?" + (OS == null));
-		if (OS != null) {
-            
+		analyzeStrategy(strat).then( OS => {
+			//log("OS null?" + (OS == null));
+			if (OS != null) {
+						
 
-            saveStrategy(strat);
-            
-			summarizeOptionStats(OS);
-			plotOptionStats(OS);
-            
-            //error(strat.title);
-            //log(JSON.stringify(strat));
-		}
-	} else {
-		error("invalid strategy");
+				saveStrategy(strat);
+				
+				summarizeOptionStats(OS);
+				plotOptionStats(OS);
+				
+				//error(strat.title);
+				//log(JSON.stringify(strat));
+			} else {
+			error("invalid strategy");
+			}
+		});
+		
 	}
-    
     
      //u("#charts-loading-container").addClass("u-none");
     
@@ -2416,384 +2435,389 @@ async function calculateOptionStrategyForm(ticker, strategy) {
 	const t0 = performance.now();
 	//log("perf0: " + t0);
 
-	price = lastAggBar(ticker).price;
-	//log("ms elapsed 1: " + (performance.now() - t0));
-	expDate = getNearestPastExpirationDate(ticker);
-	//log("ms elapsed 2: " + (performance.now() - t0));
-	contract = getOptionContract(ticker, expDate, price, "call");
-	strike = contract.strike;
-	//log(ticker + " " + strategy + " " + price + " " + strike);
-	//log("ms elapsed 3: " + (performance.now() - t0));
-	expDates = getLatestExpirationDates(ticker, strike);
-	//log(expDates);
-	//log("ms elapsed 4: " + (performance.now() - t0));
+	lastAggBar(ticker).then( res => {
+			console.log("msg, ", res)
+			price = res.price;
 
-	frontDate = expDates[1];
-	backDate = expDates[0];
-	tradeDate = backDate;
-	switch (strategy) {
-		case 'calendar-call-spread':
-			tradeDate = frontDate;
-			break;
-		case 'calendar-put-spread':
-			tradeDate = frontDate;
-			break;
-		case 'diagonal-call-spread':
-			tradeDate = frontDate;
-			break;
-		case 'diagonal-put-spread':
-			tradeDate = frontDate;
-			break;
-		case 'double-calendar':
-			tradeDate = frontDate;
-			break;
-		case 'double-diagonal':
-			tradeDate = frontDate;
-			break;
-	}
-	tradeDateMilli = getMillistampFromYMD(tradeDate);
-	//update price based on trade date
-	price = lastAggBar(ticker, tradeDateMilli).price;
-    
-    //error("price=" + price);
-    //error("price=" + price);
-	
-	//log("ms elapsed 5: " + (performance.now() - t0));
 
-	GL = new GenLeg(ticker, price, frontDate, backDate);
-	OS = new OptionStrategy(tradeDate, defaultHour, defaultMinute);
-	// GL.a('LBOP2');
-	//GL.a('LBOP2');GL.a('SBOP1');GL.a('SBOC1');GL.a('LBOC2');
-	switch (strategy) {
-		case 'iron-condor':
-			GL.a('LBOP3');
-			GL.a('SBOP1');
-			GL.a('SBOC1');
-			GL.a('LBOC3');
-			break;
-		case 'iron-butterfly':
-			GL.a('LBOP2');
-			GL.a('SBAP');
-			GL.a('SBAC');
-			GL.a('LBOC2');
-			break;
-		case 'double-calendar':
-			GL.a('LBOP1');
-			GL.a('SFOP1');
-			GL.a('SFOC1');
-			GL.a('LBOC1');
-			break;
-		case 'long-call':
-			GL.a('LBAC');
-			break;
-		case 'long-put':
-			GL.a('LBAP');
-			break;
-		case 'put-broken-wing':
-			GL.a('LBOP1');
-			GL.a('SBAP', 2);
-			GL.a('LBIP1');
-			break;
-		case 'call-broken-wing':
-			GL.a('LBIC1');
-			GL.a('SBAC', 2);
-			GL.a('LBOC1');
-			break;
-		case 'straddle':
-			GL.a('LBAP');
-			GL.a('LBAC');
-			break;
-		case 'strangle':
-			GL.a('LBOP1');
-			GL.a('LBOC1');
-			break;
-		case 'collar':
-			GL.a('LBOP1');
-			GL.a('SBOC1');
-			break;
-		case 'call-debit-spread':
-			GL.a('LBAC');
-			GL.a('SBOC1');
-			break;
-		case 'put-debit-spread':
-			GL.a('SBOP1');
-			GL.a('LBAP');
-			break;
-		case 'call-credit-spread':
-			GL.a('SBAC');
-			GL.a('LBOC1');
-			break;
-		case 'put-credit-spread':
-			GL.a('LBOP1');
-			GL.a('SBAP');
-			break;
-		case 'inverse-iron-butterfly':
-			GL.a('SBOP2');
-			GL.a('LBAP');
-			GL.a('LBAC');
-			GL.a('SBOC2');
-			break;
-		case 'inverse-iron-condor':
-			GL.a('SBOP2');
-			GL.a('LBOP1');
-			GL.a('LBOC1');
-			GL.a('SBOC2');
-			break;
-		case 'short-call':
-			GL.a('SBAC');
-			break;
-		case 'short-put':
-			GL.a('SBAP');
-			break;
-		case 'short-straddle':
-			GL.a('SBAP');
-			GL.a('SBAC');
-			break;
-		case 'short-strangle':
-			GL.a('SBOP1');
-			GL.a('SBOC1');
-			break;
-		case 'covered-call':
-			GL.a('SBOC1');
-			break;
-		case 'cash-secured-put':
-			GL.a('SBOP1');
-			break;
-		case 'protective-put':
-			GL.a('SBOP2');
-			break;
-		case 'long-put-butterfly':
-			GL.a('LBOP1');
-			GL.a('SBAP', 2);
-			GL.a('LBIP1');
-			break;
-		case 'long-call-butterfly':
-			GL.a('LBIC1');
-			GL.a('SBAC', 2);
-			GL.a('LBOC1');
-			break;
-		case 'calendar-call-spread':
-			GL.a('SFOC1');
-			GL.a('LBOC1');
-			break;
-		case 'calendar-put-spread':
-			GL.a('LBOP1');
-			GL.a('SFOP1');
-			break;
-		case 'diagonal-call-spread':
-			GL.a('SFOC1');
-			GL.a('LBOC2');
-			break;
-		case 'diagonal-put-spread':
-			GL.a('LBOP2');
-			GL.a('SFOP1');
-			break;
-		case 'double-diagonal':
-			GL.a('LBOP2');
-			GL.a('SFOP1');
-			GL.a('SFOC1');
-			GL.a('LBOC2');
-			break;
-		case 'long-call-condor':
-			GL.a('LBIC2');
-			GL.a('SBIC1');
-			GL.a('SBOC1');
-			GL.a('LBOC2');
-			break;
-		case 'long-put-condor':
-			GL.a('LBOP2');
-			GL.a('SBOP1');
-			GL.a('SBIP1');
-			GL.a('LBIP2');
-			break;
-		case 'inverse-put-broken-wing':
-			GL.a('SBOP1');
-			GL.a('LBAP', 2);
-			GL.a('SBIP1');
-			break;
-		case 'inverse-call-broken-wing':
-			GL.a('SBIC1');
-			GL.a('LBAC', 2);
-			GL.a('SBOC1');
-			break;
-		case 'short-put-butterfly':
-			GL.a('SBOP1');
-			GL.a('LBAP', 2);
-			GL.a('SBIP1');
-			break;
-		case 'short-call-butterfly':
-			GL.a('SBIC1');
-			GL.a('LBAC', 2);
-			GL.a('SBOC1');
-			break;
-		case 'call-ratio-backspread':
-			GL.a('SBAC');
-			GL.a('LBOC1', 2);
-			break;
-		case 'put-ratio-backspread':
-			GL.a('LBOP1', 2);
-			GL.a('SBAP');
-			break;
-		case 'jade-lizard':
-			GL.a('SBOP1');
-			GL.a('SBOC1');
-			GL.a('LBOC2');
-			break;
-		case 'reverse-jade-lizard':
-			GL.a('LBOP2');
-			GL.a('SBOP1');
-			GL.a('SBOC1');
-			break;
-		case 'short-call-condor':
-			GL.a('SBIC2');
-			GL.a('LBIC1');
-			GL.a('LBOC1');
-			GL.a('SBOC2');
-			break;
-		case 'short-put-condor':
-			GL.a('SBOP2');
-			GL.a('LBOP1');
-			GL.a('LBIP1');
-			GL.a('SBIP2');
-			break;
-		case 'bull-call-ladder':
-			GL.a('LBIC1');
-			GL.a('SBAC');
-			GL.a('SBOC1');
-			break;
-		case 'bear-call-ladder':
-			GL.a('SBIC1');
-			GL.a('LBAC');
-			GL.a('LBOC1');
-			break;
-		case 'bull-put-ladder':
-			GL.a('LBOP1');
-			GL.a('LBAP');
-			GL.a('SBIP1');
-			break;
-		case 'bear-put-ladder':
-			GL.a('SBOP1');
-			GL.a('SBAP');
-			GL.a('LBIP1');
-			break;
-		case 'covered-short-straddle':
-			GL.a('SBAP');
-			GL.a('SBAC');
-			break;
-		case 'covered-short-strangle':
-			GL.a('SBOP1');
-			GL.a('SBOC1');
-			break
-		case 'call-ratio-spread':
-			GL.a('LBAC');
-			GL.a('SBOC1', 2);
-			break;
-		case 'put-ratio-spread':
-			GL.a('SBOP1', 2);
-			GL.a('LBAP');
-			break;
-		case 'long-synthetic-future':
-			GL.a('SBAP');
-			GL.a('LBAC');
-			break;
-		case 'short-synthetic-future':
-			GL.a('LBAP');
-			GL.a('SBAC');
-			break;
-		case 'synthetic-put':
-			GL.a('LBOC2');
-			break;
-		case 'long-combo':
-			GL.a('SBOP1');
-			GL.a('LBOC1');
-			break;
-		case 'short-combo':
-			GL.a('LBOP1');
-			GL.a('SBOC1');
-			break;
-		case 'strip':
-			GL.a('LBAP', 2);
-			GL.a('LBAC');
-			break;
-		case 'strap':
-			GL.a('LBAP');
-			GL.a('LBAC', 2);
-			break;
-		case 'guts':
-			GL.a('LBIC1');
-			GL.a('LBIP1');
-			break;
-		case 'short-guts':
-			GL.a('SBIC1');
-			GL.a('SBIP1');
-			break;
-		case '3-leg-strategy':
-			GL.a('SBOP1');
-			GL.a('SBAP');
-			GL.a('SBOC1');
-			break;
-		case '4-leg-strategy':
-			GL.a('SBOP1');
-			GL.a('SBAP');
-			GL.a('SBAC');
-			GL.a('SBOC1');
-			break;
-		case '5-leg-strategy':
-			GL.a('SBOP2');
-			GL.a('SBOP1');
-			GL.a('SBAP');
-			GL.a('SBOC1');
-			GL.a('SBOC2');
-			break;
-		case '6-leg-strategy':
-			GL.a('SBOP2');
-			GL.a('SBOP1');
-			GL.a('SBAP');
-			GL.a('SBAC');
-			GL.a('SBOC1');
-			GL.a('SBOC2');
-			break;
-		case '7-leg-strategy':
-			GL.a('SBOP3');
-			GL.a('SBOP2');
-			GL.a('SBOP1');
-			GL.a('SBAP');
-			GL.a('SBOC1');
-			GL.a('SBOC2');
-			GL.a('SBOC3');
-			break;
-		case '8-leg-strategy':
-			GL.a('SBOP3');
-			GL.a('SBOP2');
-			GL.a('SBOP1');
-			GL.a('SBAP');
-			GL.a('SBAC');
-			GL.a('SBOC1');
-			GL.a('SBOC2');
-			GL.a('SBOC3');
-			break;
-	}
-	try {
-		//log("GLL LEGS START");
-		GLL = GL.legs;
-		//log("GLL null?" + (GLL==null));
-		//log("GLL length" + (GLL.length));
-		const promises = GLL.map(leg => OS.add(leg));
-		for (const promise of promises) {
-			reponse = await promise;
-		}
-		/*(for (let i=0; i < GLL.length; i++){
-		    
-		    OS.add(GLL[i]);
-		    
-		    log("GLL leg " + i + " exists");
-		}*/
-	} catch (e) {
-		log(e.message);
-	}
+			
+			//log("ms elapsed 1: " + (performance.now() - t0));
+			expDate = getNearestPastExpirationDate(ticker);
+			//log("ms elapsed 2: " + (performance.now() - t0));
+			contract = getOptionContract(ticker, expDate, price, "call");
+			strike = contract.strike;
+			//log(ticker + " " + strategy + " " + price + " " + strike);
+			//log("ms elapsed 3: " + (performance.now() - t0));
+			expDates = getLatestExpirationDates(ticker, strike);
+			//log(expDates);
+			//log("ms elapsed 4: " + (performance.now() - t0));
 
-    drawOptionStrategyForm(OS);
-    
+			frontDate = expDates[1];
+			backDate = expDates[0];
+			tradeDate = backDate;
+			switch (strategy) {
+				case 'calendar-call-spread':
+					tradeDate = frontDate;
+					break;
+				case 'calendar-put-spread':
+					tradeDate = frontDate;
+					break;
+				case 'diagonal-call-spread':
+					tradeDate = frontDate;
+					break;
+				case 'diagonal-put-spread':
+					tradeDate = frontDate;
+					break;
+				case 'double-calendar':
+					tradeDate = frontDate;
+					break;
+				case 'double-diagonal':
+					tradeDate = frontDate;
+					break;
+			}
+			tradeDateMilli = getMillistampFromYMD(tradeDate);
+			//update price based on trade date
+			price = lastAggBar(ticker, tradeDateMilli).price;
+			
+			//error("price=" + price);
+			//error("price=" + price);
+			
+			//log("ms elapsed 5: " + (performance.now() - t0));
+
+			GL = new GenLeg(ticker, price, frontDate, backDate);
+			OS = new OptionStrategy(tradeDate, defaultHour, defaultMinute);
+			// GL.a('LBOP2');
+			//GL.a('LBOP2');GL.a('SBOP1');GL.a('SBOC1');GL.a('LBOC2');
+			switch (strategy) {
+				case 'iron-condor':
+					GL.a('LBOP3');
+					GL.a('SBOP1');
+					GL.a('SBOC1');
+					GL.a('LBOC3');
+					break;
+				case 'iron-butterfly':
+					GL.a('LBOP2');
+					GL.a('SBAP');
+					GL.a('SBAC');
+					GL.a('LBOC2');
+					break;
+				case 'double-calendar':
+					GL.a('LBOP1');
+					GL.a('SFOP1');
+					GL.a('SFOC1');
+					GL.a('LBOC1');
+					break;
+				case 'long-call':
+					GL.a('LBAC');
+					break;
+				case 'long-put':
+					GL.a('LBAP');
+					break;
+				case 'put-broken-wing':
+					GL.a('LBOP1');
+					GL.a('SBAP', 2);
+					GL.a('LBIP1');
+					break;
+				case 'call-broken-wing':
+					GL.a('LBIC1');
+					GL.a('SBAC', 2);
+					GL.a('LBOC1');
+					break;
+				case 'straddle':
+					GL.a('LBAP');
+					GL.a('LBAC');
+					break;
+				case 'strangle':
+					GL.a('LBOP1');
+					GL.a('LBOC1');
+					break;
+				case 'collar':
+					GL.a('LBOP1');
+					GL.a('SBOC1');
+					break;
+				case 'call-debit-spread':
+					GL.a('LBAC');
+					GL.a('SBOC1');
+					break;
+				case 'put-debit-spread':
+					GL.a('SBOP1');
+					GL.a('LBAP');
+					break;
+				case 'call-credit-spread':
+					GL.a('SBAC');
+					GL.a('LBOC1');
+					break;
+				case 'put-credit-spread':
+					GL.a('LBOP1');
+					GL.a('SBAP');
+					break;
+				case 'inverse-iron-butterfly':
+					GL.a('SBOP2');
+					GL.a('LBAP');
+					GL.a('LBAC');
+					GL.a('SBOC2');
+					break;
+				case 'inverse-iron-condor':
+					GL.a('SBOP2');
+					GL.a('LBOP1');
+					GL.a('LBOC1');
+					GL.a('SBOC2');
+					break;
+				case 'short-call':
+					GL.a('SBAC');
+					break;
+				case 'short-put':
+					GL.a('SBAP');
+					break;
+				case 'short-straddle':
+					GL.a('SBAP');
+					GL.a('SBAC');
+					break;
+				case 'short-strangle':
+					GL.a('SBOP1');
+					GL.a('SBOC1');
+					break;
+				case 'covered-call':
+					GL.a('SBOC1');
+					break;
+				case 'cash-secured-put':
+					GL.a('SBOP1');
+					break;
+				case 'protective-put':
+					GL.a('SBOP2');
+					break;
+				case 'long-put-butterfly':
+					GL.a('LBOP1');
+					GL.a('SBAP', 2);
+					GL.a('LBIP1');
+					break;
+				case 'long-call-butterfly':
+					GL.a('LBIC1');
+					GL.a('SBAC', 2);
+					GL.a('LBOC1');
+					break;
+				case 'calendar-call-spread':
+					GL.a('SFOC1');
+					GL.a('LBOC1');
+					break;
+				case 'calendar-put-spread':
+					GL.a('LBOP1');
+					GL.a('SFOP1');
+					break;
+				case 'diagonal-call-spread':
+					GL.a('SFOC1');
+					GL.a('LBOC2');
+					break;
+				case 'diagonal-put-spread':
+					GL.a('LBOP2');
+					GL.a('SFOP1');
+					break;
+				case 'double-diagonal':
+					GL.a('LBOP2');
+					GL.a('SFOP1');
+					GL.a('SFOC1');
+					GL.a('LBOC2');
+					break;
+				case 'long-call-condor':
+					GL.a('LBIC2');
+					GL.a('SBIC1');
+					GL.a('SBOC1');
+					GL.a('LBOC2');
+					break;
+				case 'long-put-condor':
+					GL.a('LBOP2');
+					GL.a('SBOP1');
+					GL.a('SBIP1');
+					GL.a('LBIP2');
+					break;
+				case 'inverse-put-broken-wing':
+					GL.a('SBOP1');
+					GL.a('LBAP', 2);
+					GL.a('SBIP1');
+					break;
+				case 'inverse-call-broken-wing':
+					GL.a('SBIC1');
+					GL.a('LBAC', 2);
+					GL.a('SBOC1');
+					break;
+				case 'short-put-butterfly':
+					GL.a('SBOP1');
+					GL.a('LBAP', 2);
+					GL.a('SBIP1');
+					break;
+				case 'short-call-butterfly':
+					GL.a('SBIC1');
+					GL.a('LBAC', 2);
+					GL.a('SBOC1');
+					break;
+				case 'call-ratio-backspread':
+					GL.a('SBAC');
+					GL.a('LBOC1', 2);
+					break;
+				case 'put-ratio-backspread':
+					GL.a('LBOP1', 2);
+					GL.a('SBAP');
+					break;
+				case 'jade-lizard':
+					GL.a('SBOP1');
+					GL.a('SBOC1');
+					GL.a('LBOC2');
+					break;
+				case 'reverse-jade-lizard':
+					GL.a('LBOP2');
+					GL.a('SBOP1');
+					GL.a('SBOC1');
+					break;
+				case 'short-call-condor':
+					GL.a('SBIC2');
+					GL.a('LBIC1');
+					GL.a('LBOC1');
+					GL.a('SBOC2');
+					break;
+				case 'short-put-condor':
+					GL.a('SBOP2');
+					GL.a('LBOP1');
+					GL.a('LBIP1');
+					GL.a('SBIP2');
+					break;
+				case 'bull-call-ladder':
+					GL.a('LBIC1');
+					GL.a('SBAC');
+					GL.a('SBOC1');
+					break;
+				case 'bear-call-ladder':
+					GL.a('SBIC1');
+					GL.a('LBAC');
+					GL.a('LBOC1');
+					break;
+				case 'bull-put-ladder':
+					GL.a('LBOP1');
+					GL.a('LBAP');
+					GL.a('SBIP1');
+					break;
+				case 'bear-put-ladder':
+					GL.a('SBOP1');
+					GL.a('SBAP');
+					GL.a('LBIP1');
+					break;
+				case 'covered-short-straddle':
+					GL.a('SBAP');
+					GL.a('SBAC');
+					break;
+				case 'covered-short-strangle':
+					GL.a('SBOP1');
+					GL.a('SBOC1');
+					break
+				case 'call-ratio-spread':
+					GL.a('LBAC');
+					GL.a('SBOC1', 2);
+					break;
+				case 'put-ratio-spread':
+					GL.a('SBOP1', 2);
+					GL.a('LBAP');
+					break;
+				case 'long-synthetic-future':
+					GL.a('SBAP');
+					GL.a('LBAC');
+					break;
+				case 'short-synthetic-future':
+					GL.a('LBAP');
+					GL.a('SBAC');
+					break;
+				case 'synthetic-put':
+					GL.a('LBOC2');
+					break;
+				case 'long-combo':
+					GL.a('SBOP1');
+					GL.a('LBOC1');
+					break;
+				case 'short-combo':
+					GL.a('LBOP1');
+					GL.a('SBOC1');
+					break;
+				case 'strip':
+					GL.a('LBAP', 2);
+					GL.a('LBAC');
+					break;
+				case 'strap':
+					GL.a('LBAP');
+					GL.a('LBAC', 2);
+					break;
+				case 'guts':
+					GL.a('LBIC1');
+					GL.a('LBIP1');
+					break;
+				case 'short-guts':
+					GL.a('SBIC1');
+					GL.a('SBIP1');
+					break;
+				case '3-leg-strategy':
+					GL.a('SBOP1');
+					GL.a('SBAP');
+					GL.a('SBOC1');
+					break;
+				case '4-leg-strategy':
+					GL.a('SBOP1');
+					GL.a('SBAP');
+					GL.a('SBAC');
+					GL.a('SBOC1');
+					break;
+				case '5-leg-strategy':
+					GL.a('SBOP2');
+					GL.a('SBOP1');
+					GL.a('SBAP');
+					GL.a('SBOC1');
+					GL.a('SBOC2');
+					break;
+				case '6-leg-strategy':
+					GL.a('SBOP2');
+					GL.a('SBOP1');
+					GL.a('SBAP');
+					GL.a('SBAC');
+					GL.a('SBOC1');
+					GL.a('SBOC2');
+					break;
+				case '7-leg-strategy':
+					GL.a('SBOP3');
+					GL.a('SBOP2');
+					GL.a('SBOP1');
+					GL.a('SBAP');
+					GL.a('SBOC1');
+					GL.a('SBOC2');
+					GL.a('SBOC3');
+					break;
+				case '8-leg-strategy':
+					GL.a('SBOP3');
+					GL.a('SBOP2');
+					GL.a('SBOP1');
+					GL.a('SBAP');
+					GL.a('SBAC');
+					GL.a('SBOC1');
+					GL.a('SBOC2');
+					GL.a('SBOC3');
+					break;
+			}
+			try {
+				//log("GLL LEGS START");
+				GLL = GL.legs;
+				//log("GLL null?" + (GLL==null));
+				//log("GLL length" + (GLL.length));
+				GLL.map(leg => OS.add(leg));
+				// for (const promise of promises) {
+				// 	reponse = await promise;
+				// }
+				/*(for (let i=0; i < GLL.length; i++){
+					
+					OS.add(GLL[i]);
+					
+					log("GLL leg " + i + " exists");
+				}*/
+			} catch (e) {
+				log(e.message);
+			}
+
+			drawOptionStrategyForm(OS);
+	});
 	//log("ms total time elapsed: " + (performance.now() - t0));
 }
 
